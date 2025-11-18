@@ -1,0 +1,247 @@
+---
+title: "Final Project"
+subtitle: "Linear Models"
+author: "Brian Witarsa"
+date: last-modified
+format: 
+   html:
+     df-print: paged
+     embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message=FALSE)
+```
+
+# Final Project \| Step One
+
+## Exploratory Data Analysis
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lmtest)
+library(rms)
+library(MASS)
+```
+
+```{r}
+
+cancer_df <- read.csv('DS64510_Project_Data.csv')
+
+formula1 <- as.formula(TARGET_deathRate ~ povertyPercent + PctPublicCoverage + PctEmpPrivCoverage + PctPrivateCoverage + studyPerCap + medIncome + MedianAge)
+cor_variables <- cancer_df |> 
+  dplyr::select(TARGET_deathRate, povertyPercent, PctPublicCoverage, 
+          PctUnemployed16_Over, PctPrivateCoverage, incidenceRate, medIncome, MedianAge)
+
+cor_matrix <- cor(cor_variables, use="complete.obs")
+print(cor_matrix)
+```
+
+## Multicolinearity
+
+There are several variables that are highly correlated:
+
+1.  Poverty Percent \<--\> Private Coverage Percentage
+2.  Poverty Percent \<--\> Median Income
+3.  Public Coverage Percentage \<--\> Median Income
+4.  Public Coverage Percentage \<--\> Private Coverage Percentage
+
+Highly correlated values cause multicolinearity in the model, which produce inaccurate estimates.
+
+Poverty Percent
+
+```{r}
+
+ggplot(cancer_df, aes(x = povertyPercent, y = TARGET_deathRate)) +
+  geom_point() + geom_smooth(method = "lm")
+```
+
+Poverty Percentage has a positive correlation with TARGET_deathRate. The higher the poverty rate, the higher the deathRate.
+
+Public Coverage Percentage
+
+```{r}
+
+ggplot(cancer_df, aes(x = PctPublicCoverage, y = TARGET_deathRate)) +
+  geom_point() + geom_smooth(method = "lm")
+```
+
+Public Coverage Percentage has a positive correlation with TARGET_deathRate. The higher the Public Coverage Percentage rate, the higher the TARGET_deathRate. This graph does have less variance than the Poverty Percentage graph.
+
+Median Income
+
+```{r}
+
+ggplot(cancer_df, aes(x = medIncome, y = TARGET_deathRate)) +
+  geom_point() + geom_smooth(method = "lm")
+```
+
+Median Income has a negative correlation with TARGET_deathRate. The higher the Median Income, the lower the deathRate.
+
+Incidence Rate
+
+```{r}
+
+ggplot(cancer_df, aes(x = incidenceRate, y = TARGET_deathRate)) +
+  geom_point() + geom_smooth(method = "lm")
+```
+
+Incidence Rate has a positive correlation with TARGET_deathRate. The higher the Incidence Rate, the higher the deathRate. This graph did have the most variance.
+
+## Multivariate Scatter Plot
+
+```{r, warning=FALSE}
+ggplot(cancer_df, aes(x = povertyPercent, y = TARGET_deathRate, color = PctPublicCoverage)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+
+Poverty Percentage has a positive correlation with TARGET_deathRate. When Public Coverage Percentage increases, both the deathRate and Poverty Percentage increases.
+
+# Step Two
+
+```{r}
+model <- lm(formula1, data=cancer_df)
+summary(model)
+```
+
+2.  PctPublicCoverage and PctEmpPrivCoverage have positive slope estimates, which means for every unit increase in PctPublicCoverage or PctEmpPrivCoverage, the death rate increases. I would have expected insurance coverage of any kind would have a negative correlation.
+3.  povertyPercent, PctPublicCoverage, PctEmpPrivCoverage, PctPrivateCoverage. I would have thought that MedianAge would be statistically significant as, from personal experience, the risk of cancer increases with age.
+4.  0.2641. This means that the predictors chosen only account for 26.41% of the variance in TARGET_deathRate.
+
+# Step Three
+
+## Model Selection
+
+```{r}
+
+
+
+
+ols.mod1 <- ols(formula1, data=cancer_df)
+fastbw(ols.mod1, rule="p", sls=0.05)
+```
+
+1.  MedianAge and studyPerCap both did not have a significant p value in the previous model. Actually they both have the highest p values, and the fastbw method reflects that.
+
+```{r}
+
+aic_result <- stepAIC(model)
+```
+
+1.  MedianAge and studyPerCap both did not have a significant p value in the previous model and the stepAIC method reflects that. Those were the only two predictors removed from the model.
+
+### I am choosing to continue with the stepAIC model.
+
+```{r}
+summary(aic_result)
+```
+
+# Step Four
+
+```{r}
+plot(model$fitted.values, model$residuals)
+```
+
+The residuals are clustered at the center, but increase in spread at the extremes. This may indicate slight heteroscedasticity, which is a violation of the constant variance assumption.
+
+### Fitted Values vs Residuals Plot
+
+```{r}
+plot(aic_result$fitted.values, aic_result$residuals)
+```
+
+The residuals are clustered at the center, but increase in spread at the extremes. This may indicate slight heteroscedasticity, which is a violation of the constant variance assumption.
+
+### Q-Q Plot
+
+```{r}
+qqnorm(aic_result$residuals)
+qqline(aic_result$residuals)
+```
+
+There are quite a number of points that deviate from the line. There is evidence for non normal residuals
+
+### Lagged Residuals Plot
+
+```{r}
+n <- length(residuals(model))
+plot(tail(residuals(model),n-1) ~ head(residuals(model),n-1), xlab=expression(hat(epsilon)[i]),ylab=expression(hat(epsilon)[i+1]))
+abline(h=0,v=0,col=grey(0.75))
+```
+
+The lagged residual plot does not show a linear relationship between consecutive residuals. One residual does not strongly predict the next.
+
+# Step Five
+
+
+```{r}
+plot(cooks.distance(aic_result))
+```
+From observing the cooks distance plot, we can see one clear outlier. Most are very close to 0, very low cooks distance numbers.
+
+
+```{r}
+plot(hatvalues(aic_result))
+```
+Observing the hatvalues also suggest one outlier, but the points are more variably spread. There are less points concentrated on the x axis. 
+
+# Step Six
+
+From the information gathered in Step Four, we conclude that a transformation is needed. To correct this, I will use a Box-Cox transformation
+
+```{r}
+bc <- boxcox(model, plotit=T)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+
+```{r}
+formula2 <- as.formula(TARGET_deathRate^lambda ~ povertyPercent + PctPublicCoverage + PctEmpPrivCoverage + PctPrivateCoverage + studyPerCap + medIncome + MedianAge)
+modelBox <- lm(formula2, data=cancer_df)
+summary(modelBox)
+```
+
+# Step Seven
+
+```{r}
+summary_model <- summary(modelBox)
+coef <- summary_model$coefficients
+coef_df <- as.data.frame(coef)
+coef_df <- coef_df[, c("Estimate", "Pr(>|t|)")]
+colnames(coef_df) <- c("Parameter Estimate", "p-value")
+print(coef_df)
+```
+
+R-squared:
+```{r}
+summary_model$r.squared
+```
+
+
+```{r}
+confint(modelBox, "PctEmpPrivCoverage", level=0.95)
+```
+
+```{r}
+cancer_median <- data.frame(
+  povertyPercent = median(cancer_df$povertyPercent, na.rm = TRUE),
+  PctPublicCoverage = median(cancer_df$PctPublicCoverage, na.rm = TRUE),
+  PctEmpPrivCoverage = median(cancer_df$PctEmpPrivCoverage, na.rm = TRUE),
+  PctPrivateCoverage = median(cancer_df$PctPrivateCoverage, na.rm = TRUE),
+  studyPerCap = median(cancer_df$studyPerCap, na.rm = TRUE),
+  medIncome = median(cancer_df$medIncome, na.rm = TRUE),
+  MedianAge = median(cancer_df$MedianAge, na.rm = TRUE)
+)
+
+pred <- predict(modelBox, newdata = cancer_median, interval = "confidence", level = 0.95)
+print(pred)
+
+
+```
+
+```{r}
+predict(modelBox, newdata = cancer_median, interval = "prediction", level = 0.95)
+```
+
